@@ -2410,7 +2410,7 @@ exports.getOS = function() {
  *
  * ***** END LICENSE BLOCK ***** */
 
-ace.define('ace/editor', ['require', 'exports', 'module' , 'ace/lib/fixoldbrowsers', 'ace/lib/oop', 'ace/lib/lang', 'ace/lib/useragent', 'ace/keyboard/textinput', 'ace/mouse/mouse_handler', 'ace/mouse/fold_handler', 'ace/keyboard/keybinding', 'ace/edit_session', 'ace/search', 'ace/range', 'ace/lib/event_emitter', 'ace/commands/command_manager', 'ace/commands/default_commands'], function(require, exports, module) {
+ace.define('ace/editor', ['require', 'exports', 'module' , 'ace/lib/fixoldbrowsers', 'ace/lib/oop', 'ace/lib/lang', 'ace/lib/useragent', 'ace/keyboard/textinput', 'ace/mouse/mouse_handler', 'ace/mouse/fold_handler', 'ace/touch_handler', 'ace/keyboard/keybinding', 'ace/edit_session', 'ace/search', 'ace/range', 'ace/lib/event_emitter', 'ace/commands/command_manager', 'ace/commands/default_commands'], function(require, exports, module) {
 "use strict";
 
 require("./lib/fixoldbrowsers");
@@ -2421,7 +2421,7 @@ var useragent = require("./lib/useragent");
 var TextInput = require("./keyboard/textinput").TextInput;
 var MouseHandler = require("./mouse/mouse_handler").MouseHandler;
 var FoldHandler = require("./mouse/fold_handler").FoldHandler;
-//var TouchHandler = require("./touch_handler").TouchHandler;
+var TouchHandler = require("./touch_handler").TouchHandler;
 var KeyBinding = require("./keyboard/keybinding").KeyBinding;
 var EditSession = require("./edit_session").EditSession;
 var Search = require("./search").Search;
@@ -2438,9 +2438,8 @@ var Editor = function(renderer, session) {
     this.textInput  = new TextInput(renderer.getTextAreaContainer(), this);
     this.keyBinding = new KeyBinding(this);
 
-    // TODO detect touch event support
     if (useragent.isIPad) {
-        //this.$mouseHandler = new TouchHandler(this);
+        this.$mouseHandler = new TouchHandler(this);
     } else {
         this.$mouseHandler = new MouseHandler(this);
         new FoldHandler(this);
@@ -3806,6 +3805,8 @@ var TextInput = function(parentNode, host) {
         
     text.style.left = "-10000px";
     text.style.position = "fixed";
+    if (useragent.isIPad)
+        text.style.position = "absolute";
     parentNode.insertBefore(text, parentNode.firstChild);
 
     var PLACEHOLDER = String.fromCharCode(0);
@@ -3828,13 +3829,17 @@ var TextInput = function(parentNode, host) {
             if (value) {
                 if (value.charCodeAt(value.length-1) == PLACEHOLDER.charCodeAt(0)) {
                     value = value.slice(0, -1);
-                    if (value)
+                    if (value.length)
+                        host.onTextInput(value, pasted);
+                }
+                if (value.charCodeAt(0) == PLACEHOLDER.charCodeAt(0)) {
+                    value = value.slice(1, value.length);
+                    if (value.length)
                         host.onTextInput(value, pasted);
                 }
                 else {
                     host.onTextInput(value, pasted);
                 }
-
                 // If editor is no longer focused we quit immediately, since
                 // it means that something else is in charge now.
                 if (!isFocused())
@@ -4932,6 +4937,129 @@ function FoldHandler(editor) {
 
 exports.FoldHandler = FoldHandler;
 
+});/* ***** BEGIN LICENSE BLOCK *****
+ * Version: MPL 1.1/GPL 2.0/LGPL 2.1
+ *
+ * The contents of this file are subject to the Mozilla Public License Version
+ * 1.1 (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ * http://www.mozilla.org/MPL/
+ *
+ * Software distributed under the License is distributed on an "AS IS" basis,
+ * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+ * for the specific language governing rights and limitations under the
+ * License.
+ *
+ * The Original Code is Ajax.org Code Editor (ACE).
+ *
+ * The Initial Developer of the Original Code is
+ * Ajax.org B.V.
+ * Portions created by the Initial Developer are Copyright (C) 2010
+ * the Initial Developer. All Rights Reserved.
+ *
+ * Contributor(s):
+ *      Fabian Jakobs <fabian AT ajax DOT org>
+ *
+ * Alternatively, the contents of this file may be used under the terms of
+ * either the GNU General Public License Version 2 or later (the "GPL"), or
+ * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
+ * in which case the provisions of the GPL or the LGPL are applicable instead
+ * of those above. If you wish to allow use of your version of this file only
+ * under the terms of either the GPL or the LGPL, and not to allow others to
+ * use your version of this file under the terms of the MPL, indicate your
+ * decision by deleting the provisions above and replace them with the notice
+ * and other provisions required by the GPL or the LGPL. If you do not delete
+ * the provisions above, a recipient may use your version of this file under
+ * the terms of any one of the MPL, the GPL or the LGPL.
+ *
+ * ***** END LICENSE BLOCK ***** */
+
+ace.define('ace/touch_handler', ['require', 'exports', 'module' , 'ace/lib/event'], function(require, exports, module) {
+"use strict";
+
+var event = require("./lib/event");
+
+var TouchHandler = function(editor) {
+    this.editor = editor;
+    event.addListener(editor.container, "click", function(e) {
+        // does this only work on click?
+        editor.focus();
+    });
+    var mouseTarget = editor.renderer.getMouseEventTarget();
+    mouseTarget.ontouchstart = this.onTouchStart.bind(this);
+    mouseTarget.ontouchmove = this.onTouchMove.bind(this);
+    mouseTarget.ontouchend = this.onTouchEnd.bind(this);
+};
+
+(function() {
+
+    this.$scrollSpeed = 1;
+    this.setScrollSpeed = function(speed) {
+        this.$scrollSpeed = speed;
+    };
+    
+    this.getScrollSpeed = function() {
+        return this.$scrollSpeed;
+    };
+    
+    this.onTouchMove = function(e) {
+        e.preventDefault();
+        if (e.touches.length == 1) {
+            this.$moveCursor(e.touches[0]);
+        }
+        else if (e.touches.length == 2) {
+            if (!this.$scroll)
+                return;
+            
+            var touch = e.touches[0];
+            var diffX = this.$scroll.pageX - touch.pageX;
+            var diffY = this.$scroll.pageY - touch.pageY;
+            this.editor.renderer.scrollBy(diffX, diffY);
+
+            this.$scroll = {
+                pageX: touch.pageX,
+                pageY: touch.pageY,
+                ts: new Date().getTime()
+            };
+        }
+    };
+    
+    this.$moveCursor = function(touch) {
+        var pageX = touch.pageX;
+        var pageY = touch.pageY;
+        
+        var editor = this.editor;
+        var pos = editor.renderer.screenToTextCoordinates(pageX, pageY);
+        pos.row = Math.max(0, Math.min(pos.row, editor.session.getLength()-1));
+        
+        editor.moveCursorToPosition(pos);
+        editor.renderer.scrollCursorIntoView();
+    };
+    
+    this.onTouchEnd = function(e) {
+        //if (e.touches.length == 1) {
+            editor.focus();
+            //e.preventDefault();
+        //}
+    };
+    
+    this.onTouchStart = function(e) {
+        if (e.touches.length == 1) {
+            this.$moveCursor(e.touches[0]);
+        }
+        else if (e.touches.length == 2) {
+            e.preventDefault();
+            var touch = e.touches[0];
+            this.$scroll = {
+                pageX: touch.pageX,
+                pageY: touch.pageY
+            };
+        }
+    };
+
+}).call(TouchHandler.prototype);
+
+exports.TouchHandler = TouchHandler;
 });/* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
@@ -11894,27 +12022,40 @@ var VirtualRenderer = function(container, theme) {
     };
 
     this.getTextAreaContainer = function() {
-        return this.container;
+        return useragent.isIPad ? this.content : this.container;
     };
 
     this.moveTextAreaToCursor = function(textarea) {
         // in IE the native cursor always shines through
-        // this persists in IE9
         if (useragent.isIE)
             return;
-        
+
         if (this.layerConfig.lastRow === 0)
             return;
 
-        var pos = this.$cursorLayer.getPixelPosition();
-        if (!pos)
-            return;
+        var pos, left, top;
+        if (useragent.isIPad) {
+            pos = this.$cursorLayer.getPixelPosition(null, true);
+            if (!pos)
+                return;
 
-        var bounds = this.content.getBoundingClientRect();
-        var offset = this.layerConfig.offset;
+            left = pos.left - 4;
+            top  = pos.top;
+        } else {
+            pos = this.$cursorLayer.getPixelPosition();
+            if (!pos)
+                return;
 
-        textarea.style.left = (bounds.left + pos.left) + "px";
-        textarea.style.top = (bounds.top + pos.top - this.scrollTop + offset) + "px";
+            var bounds = this.content.getBoundingClientRect();
+            var offset = this.layerConfig.offset;
+
+            left = (bounds.left + pos.left);
+            top = (bounds.top + pos.top - this.scrollTop + offset);
+        }
+
+        textarea.style.left = left + "px";
+        textarea.style.top  = top  + "px";
+        textarea.style.lineHeight = this.layerConfig.lineHeight + "px";
     };
 
     this.getFirstVisibleRow = function() {
@@ -13440,12 +13581,14 @@ exports.Text = Text;
  *
  * ***** END LICENSE BLOCK ***** */
 
-ace.define('ace/layer/cursor', ['require', 'exports', 'module' , 'ace/lib/dom'], function(require, exports, module) {
+ace.define('ace/layer/cursor', ['require', 'exports', 'module' , 'ace/lib/dom', 'ace/lib/useragent'], function(require, exports, module) {
 "use strict";
 
 var dom = require("../lib/dom");
+var useragent = require("../lib/useragent");
 
 var Cursor = function(parentEl) {
+    this.isVisible = false;
     this.element = dom.createElement("div");
     this.element.className = "ace_layer ace_cursor-layer";
     parentEl.appendChild(this.element);
@@ -13453,8 +13596,8 @@ var Cursor = function(parentEl) {
     this.cursor = dom.createElement("div");
     this.cursor.className = "ace_cursor ace_hidden";
     this.element.appendChild(this.cursor);
-
-    this.isVisible = false;
+    if (useragent.isIPad) 
+        this.cursor.style.visibility = "hidden";
 };
 
 (function() {
@@ -13469,12 +13612,14 @@ var Cursor = function(parentEl) {
     };
 
     this.hideCursor = function() {
+        if (useragent.isIPad) return;
         this.isVisible = false;
         dom.addCssClass(this.cursor, "ace_hidden");
         clearInterval(this.blinkId);
     };
 
     this.showCursor = function() {
+        if (useragent.isIPad) return;
         this.isVisible = true;
         dom.removeCssClass(this.cursor, "ace_hidden");
         this.cursor.style.visibility = "visible";
@@ -13528,7 +13673,7 @@ var Cursor = function(parentEl) {
         this.cursor.style.width = config.characterWidth + "px";
         this.cursor.style.height = config.lineHeight + "px";
 
-        var overwrite = this.session.getOverwrite()
+        var overwrite = this.session.getOverwrite();
         if (overwrite != this.overwrite) {
             this.overwrite = overwrite;
             if (overwrite)
