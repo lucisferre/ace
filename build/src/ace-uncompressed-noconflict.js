@@ -3802,6 +3802,10 @@ var TextInput = function(parentNode, host) {
     var text = dom.createElement("textarea");
     if (useragent.isTouchPad)
         text.setAttribute("x-palm-disable-auto-cap", true);
+    if (useragent.isIPad) {
+        text.setAttribute("autocapitalize", "off");
+        text.setAttribute("autocorrect", "off");
+    }
         
     text.style.left = "-10000px";
     text.style.position = "fixed";
@@ -3829,12 +3833,12 @@ var TextInput = function(parentNode, host) {
             if (value) {
                 if (value.charCodeAt(value.length-1) == PLACEHOLDER.charCodeAt(0)) {
                     value = value.slice(0, -1);
-                    if (value.length)
+                    if (value)
                         host.onTextInput(value, pasted);
                 }
-                if (value.charCodeAt(0) == PLACEHOLDER.charCodeAt(0)) {
+                else if (value.charCodeAt(0) == PLACEHOLDER.charCodeAt(0)) {
                     value = value.slice(1, value.length);
-                    if (value.length)
+                    if (value)
                         host.onTextInput(value, pasted);
                 }
                 else {
@@ -12038,9 +12042,9 @@ var VirtualRenderer = function(container, theme) {
             pos = this.$cursorLayer.getPixelPosition(null, true);
             if (!pos)
                 return;
-
-            left = pos.left - 4;
-            top  = pos.top;
+            // Seems to correctly position the cursor on iPad2
+            left = pos.left - 8;
+            top  = pos.top - 3;
         } else {
             pos = this.$cursorLayer.getPixelPosition();
             if (!pos)
